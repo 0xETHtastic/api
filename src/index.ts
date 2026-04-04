@@ -54,10 +54,8 @@ async function retrieveAttestation(burnTxHash: string): Promise<AttestationMessa
   }
 }
 
-console.log("ENV keys available:", Object.keys(process.env).filter(k => k.includes("PRIVATE") || k === "PORT" || k === "RAILWAY_ENVIRONMENT"));
-
 if (!process.env.PRIVATE_KEY) {
-  throw new Error("PRIVATE_KEY environment variable is required. Available env keys: " + Object.keys(process.env).join(", "));
+  throw new Error("PRIVATE_KEY environment variable is required");
 }
 
 const account = privateKeyToAccount(
