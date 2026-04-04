@@ -4,7 +4,7 @@ const app = new Elysia()
   .get("/", () => "Hello Elysia")
   .post(
     "/sendToEvvm",
-    ({ body }) => body,
+    ({ body }) => ({ responseStatus: "done", ...body }),
     {
       body: t.Object({
         to: t.String(),
@@ -21,7 +21,7 @@ const app = new Elysia()
       }),
     }
   )
-  .listen(3000);
+  .listen(3001);
 
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
