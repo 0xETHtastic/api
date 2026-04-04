@@ -54,6 +54,10 @@ async function retrieveAttestation(burnTxHash: string): Promise<AttestationMessa
   }
 }
 
+if (!process.env.PRIVATE_KEY) {
+  throw new Error("PRIVATE_KEY environment variable is required");
+}
+
 const account = privateKeyToAccount(
   process.env.PRIVATE_KEY as `0x${string}`
 );
@@ -276,4 +280,6 @@ const app = new Elysia()
   )
   .listen(3001);
 
-export default app;
+console.log(
+  `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
+);
