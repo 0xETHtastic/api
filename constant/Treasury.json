@@ -1,0 +1,47 @@
+{
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        { "name": "_coreAddress", "type": "address", "internalType": "address" }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "deposit",
+      "inputs": [
+        { "name": "token", "type": "address", "internalType": "address" },
+        { "name": "amount", "type": "uint256", "internalType": "uint256" }
+      ],
+      "outputs": [],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "getCoreAddress",
+      "inputs": [],
+      "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "withdraw",
+      "inputs": [
+        { "name": "token", "type": "address", "internalType": "address" },
+        { "name": "amount", "type": "uint256", "internalType": "uint256" }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "error",
+      "name": "DepositAmountMustBeGreaterThanZero",
+      "inputs": []
+    },
+    { "type": "error", "name": "DepositCoinWithToken", "inputs": [] },
+    { "type": "error", "name": "InsufficientBalance", "inputs": [] },
+    { "type": "error", "name": "InvalidDepositAmount", "inputs": [] },
+    { "type": "error", "name": "PrincipalTokenIsNotWithdrawable", "inputs": [] }
+  ]
+}
