@@ -59,7 +59,7 @@ if (!process.env.PRIVATE_KEY) {
 }
 
 const account = privateKeyToAccount(
-  process.env.PRIVATE_KEY as `0x${string}`
+  process.env.PRIVATE_KEY.replace(/"/g, "").trim() as `0x${string}`
 );
 
 const publicClient = createPublicClient({
