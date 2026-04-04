@@ -1,0 +1,81 @@
+{
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "_coreAddress",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_stakingAddress",
+          "type": "address",
+          "internalType": "address"
+        },
+        { "name": "_trustedEOA", "type": "address", "internalType": "address" }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "executeCrosschain",
+      "inputs": [
+        { "name": "user", "type": "address", "internalType": "address" },
+        {
+          "name": "destinationChain",
+          "type": "string",
+          "internalType": "string"
+        },
+        { "name": "amount", "type": "uint256", "internalType": "uint256" },
+        { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+        { "name": "isAsyncExec", "type": "bool", "internalType": "bool" },
+        { "name": "signature", "type": "bytes", "internalType": "bytes" },
+        {
+          "name": "priorityFeeEvvm",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        { "name": "nonceEvvm", "type": "uint256", "internalType": "uint256" },
+        { "name": "isAsyncExecEvvm", "type": "bool", "internalType": "bool" },
+        { "name": "signatureEvvm", "type": "bytes", "internalType": "bytes" }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "getEvvmID",
+      "inputs": [],
+      "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getIfUsedAsyncNonce",
+      "inputs": [
+        { "name": "user", "type": "address", "internalType": "address" },
+        { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+      ],
+      "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getNextCurrentSyncNonce",
+      "inputs": [
+        { "name": "user", "type": "address", "internalType": "address" }
+      ],
+      "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getPrincipalTokenAddress",
+      "inputs": [],
+      "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+      "stateMutability": "view"
+    },
+    { "type": "error", "name": "InvalidServiceSignature", "inputs": [] }
+  ]
+}
