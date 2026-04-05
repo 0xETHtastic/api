@@ -77,6 +77,24 @@ const walletClient = createWalletClient({
 
 const app = new Elysia()
   .get("/", () => "Hello Elysia")
+  .get(
+    "/getBalance",
+    async ({ query }) => {
+      const balance = await publicClient.readContract({
+        address: EVVM_CONTRACT,
+        abi: EVVM_ABI,
+        functionName: "getBalance",
+        args: [query.user as `0x${string}`, query.token as `0x${string}`],
+      }) as bigint;
+      return { user: query.user, token: query.token, balance: balance.toString() };
+    },
+    {
+      query: t.Object({
+        user: t.String(),
+        token: t.String(),
+      }),
+    }
+  )
   .post(
     "/sendToEvvm",
     async ({ body }) => {
