@@ -28,6 +28,8 @@ const TREASURY_CONTRACT = "0x1fa4Ae804E27896C45771B7D41330feBC868A7Bc" as const;
 const ARC_TOKEN_MESSENGER   = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA" as const;
 const DEST_MSG_TRANSMITTER  = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as const;
 const ARC_CCTP_DOMAIN       = 26;
+// Arc USDC ERC-20 interface (6 decimals) — wraps native USDC (18 decimals)
+const ARC_USDC_ERC20        = "0x3600000000000000000000000000000000000000" as const;
 
 type ChainConfig = { viemChain: Chain; cctpDomain: number };
 
@@ -78,6 +80,7 @@ const app = new Elysia()
   .post(
     "/sendToEvvm",
     async ({ body }) => {
+     try {
       let request;
       try {
         ({ request } = await publicClient.simulateContract({
@@ -109,9 +112,25 @@ const app = new Elysia()
         return { status: "reverted on simulation", reason };
       }
 
-      const txHash = await walletClient.writeContract(request);
+      let txHash: `0x${string}`;
+      try {
+        txHash = await walletClient.writeContract(request);
+      } catch (err: any) {
+        const reason =
+          err?.cause?.data?.errorName ??
+          err?.shortMessage ??
+          err?.message ??
+          "writeContract failed";
+        return { status: "failed on pay write", reason };
+      }
 
       return { status: "done", txHash };
+     } catch (err: any) {
+       return {
+         status: "unexpected_error",
+         reason: err?.shortMessage ?? err?.message ?? String(err),
+       };
+     }
     },
     {
       body: t.Object({
@@ -132,6 +151,7 @@ const app = new Elysia()
   .post(
     "/executeCrosschain",
     async ({ body }) => {
+     try {
       let request;
       try {
         ({ request } = await publicClient.simulateContract({
@@ -162,14 +182,24 @@ const app = new Elysia()
         return { status: "reverted on simulation", reason };
       }
 
-      const txHash = await walletClient.writeContract(request);
+      let txHash: `0x${string}`;
+      try {
+        txHash = await walletClient.writeContract(request);
+      } catch (err: any) {
+        const reason =
+          err?.cause?.data?.errorName ??
+          err?.shortMessage ??
+          err?.message ??
+          "writeContract failed";
+        return { status: "failed on executeCrosschain write", reason };
+      }
 
       // Withdraw the same amount from Treasury using the native coin address
       const nativeCoinAddress = await publicClient.readContract({
         address: EVVM_CONTRACT,
         abi: EVVM_ABI,
         functionName: "getChainHostCoinAddress",
-      });
+      }) as `0x${string}`;
 
       let withdrawRequest;
       try {
@@ -178,7 +208,7 @@ const app = new Elysia()
           address: TREASURY_CONTRACT,
           abi: TREASURY_ABI,
           functionName: "withdraw",
-          args: [nativeCoinAddress as `0x${string}`, BigInt(body.amount)],
+          args: [nativeCoinAddress, BigInt(body.amount)],
         }));
       } catch (err: any) {
         const reason =
@@ -187,10 +217,30 @@ const app = new Elysia()
           err?.shortMessage ??
           err?.message ??
           "simulation reverted";
-        return { status: "reverted on withdrawal simulation", reason, txHash };
+        return {
+          status: "reverted on withdrawal simulation",
+          reason,
+          txHash,
+          debug: {
+            apiWallet: account.address,
+            tokenUsed: nativeCoinAddress,
+            amountRequested: body.amount,
+            hint: "The API wallet needs USDC pre-deposited in Treasury. Call Treasury.deposit() with the API wallet to fund it.",
+          },
+        };
       }
 
-      const withdrawTxHash = await walletClient.writeContract(withdrawRequest);
+      let withdrawTxHash: `0x${string}`;
+      try {
+        withdrawTxHash = await walletClient.writeContract(withdrawRequest);
+      } catch (err: any) {
+        const reason =
+          err?.cause?.data?.errorName ??
+          err?.shortMessage ??
+          err?.message ??
+          "writeContract failed";
+        return { status: "failed on withdrawal write", reason, txHash };
+      }
 
       // ── CCTP Bridge: Arc → destinationChain ──────────────────────────────
 
@@ -204,46 +254,130 @@ const app = new Elysia()
         };
       }
 
-      // Get Arc USDC address from CctpService
-      const arcUsdcAddress = (await publicClient.readContract({
-        address: CCTP_CONTRACT,
-        abi: CCTP_ABI,
-        functionName: "getPrincipalTokenAddress",
-      })) as `0x${string}`;
+      // Use Arc USDC ERC-20 interface (6 decimals) for CCTP
+      const arcUsdcAddress = ARC_USDC_ERC20;
 
       const mintRecipientBytes32 = `0x000000000000000000000000${body.user.slice(2)}` as `0x${string}`;
-      const amount = BigInt(body.amount);
+      // Convert from 18 decimals (native) to 6 decimals (ERC-20) for CCTP
+      const amount18 = BigInt(body.amount);
+      const amount6 = amount18 / 1000000000000n;
 
-      // Approve TokenMessengerV2 to spend Arc USDC
-      const approveTxHash = await walletClient.sendTransaction({
-        to: arcUsdcAddress,
-        data: encodeFunctionData({
-          abi: [{ type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] }],
+      const ERC20_ABI = [
+        { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ name: "", type: "bool" }] },
+        { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+      ] as const;
+
+      const TOKEN_MESSENGER_ABI = [
+        { type: "function", name: "depositForBurn", stateMutability: "nonpayable", inputs: [{ name: "amount", type: "uint256" }, { name: "destinationDomain", type: "uint32" }, { name: "mintRecipient", type: "bytes32" }, { name: "burnToken", type: "address" }, { name: "destinationCaller", type: "bytes32" }, { name: "maxFee", type: "uint256" }, { name: "minFinalityThreshold", type: "uint32" }], outputs: [] },
+        { type: "function", name: "getMinFeeAmount", stateMutability: "view", inputs: [{ name: "amount", type: "uint256" }], outputs: [{ name: "", type: "uint256" }] },
+      ] as const;
+
+      // Wait for withdraw to be confirmed
+      await publicClient.waitForTransactionReceipt({ hash: withdrawTxHash });
+
+      // Check USDC ERC-20 balance (6 decimals) of the API wallet
+      const usdcBalance = (await publicClient.readContract({
+        address: arcUsdcAddress,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [account.address],
+      })) as bigint;
+
+      if (usdcBalance < amount6) {
+        return {
+          status: "failed on cctp_balance_check",
+          reason: `Insufficient USDC ERC20 balance. Have: ${usdcBalance.toString()} (6 dec), need: ${amount6.toString()} (6 dec).`,
+          txHash,
+          withdrawTxHash,
+        };
+      }
+
+      // Approve TokenMessengerV2 to spend Arc USDC (6 decimals)
+      let approveTxHash: `0x${string}`;
+      try {
+        const { request: approveRequest } = await publicClient.simulateContract({
+          account,
+          address: arcUsdcAddress,
+          abi: ERC20_ABI,
           functionName: "approve",
-          args: [ARC_TOKEN_MESSENGER, amount],
-        }),
-      });
+          args: [ARC_TOKEN_MESSENGER, amount6],
+        });
+        approveTxHash = await walletClient.writeContract(approveRequest);
+      } catch (err: any) {
+        return {
+          status: "failed on cctp_approve",
+          reason: err?.cause?.data?.errorName ?? err?.shortMessage ?? err?.message ?? "unknown error",
+          txHash,
+          withdrawTxHash,
+        };
+      }
 
-      // Burn USDC on Arc via TokenMessengerV2
-      const burnTxHash = await walletClient.sendTransaction({
-        to: ARC_TOKEN_MESSENGER,
-        data: encodeFunctionData({
-          abi: [{ type: "function", name: "depositForBurn", stateMutability: "nonpayable", inputs: [{ name: "amount", type: "uint256" }, { name: "destinationDomain", type: "uint32" }, { name: "mintRecipient", type: "bytes32" }, { name: "burnToken", type: "address" }, { name: "destinationCaller", type: "bytes32" }, { name: "maxFee", type: "uint256" }, { name: "minFinalityThreshold", type: "uint32" }], outputs: [] }],
+      // Wait for approve to be confirmed before depositForBurn
+      await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+
+      // Get the minimum fee from the TokenMessengerV2 contract (6 decimals)
+      let maxFee: bigint;
+      try {
+        const minFeeAmount = (await publicClient.readContract({
+          address: ARC_TOKEN_MESSENGER,
+          abi: TOKEN_MESSENGER_ABI,
+          functionName: "getMinFeeAmount",
+          args: [amount6],
+        })) as bigint;
+        const feeFloor = amount6 / 2000n;
+        maxFee = minFeeAmount > feeFloor ? minFeeAmount : feeFloor;
+        if (maxFee >= amount6) maxFee = amount6 - 1n;
+      } catch {
+        maxFee = amount6 / 2000n > 500n ? amount6 / 2000n : 500n;
+        if (maxFee >= amount6) maxFee = amount6 - 1n;
+      }
+
+      // Burn USDC on Arc via TokenMessengerV2 (6 decimals)
+      let burnTxHash: `0x${string}`;
+      try {
+        const { request: burnRequest } = await publicClient.simulateContract({
+          account,
+          address: ARC_TOKEN_MESSENGER,
+          abi: TOKEN_MESSENGER_ABI,
           functionName: "depositForBurn",
           args: [
-            amount,
+            amount6,
             destConfig.cctpDomain,
             mintRecipientBytes32,
             arcUsdcAddress,
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            amount / 2000n > 500n ? amount / 2000n : 500n,
+            "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+            maxFee,
             1000,
           ],
-        }),
-      });
+        });
+        burnTxHash = await walletClient.writeContract(burnRequest);
+      } catch (err: any) {
+        return {
+          status: "failed on cctp_depositForBurn",
+          reason: err?.cause?.data?.errorName ?? err?.cause?.reason ?? err?.shortMessage ?? err?.message ?? "unknown error",
+          txHash,
+          withdrawTxHash,
+          approveTxHash,
+          usdcBalance: usdcBalance.toString(),
+          amount6: amount6.toString(),
+          maxFeeUsed: maxFee.toString(),
+        };
+      }
 
       // Wait for Circle attestation
-      const attestation = await retrieveAttestation(burnTxHash);
+      let attestation: AttestationMessage;
+      try {
+        attestation = await retrieveAttestation(burnTxHash);
+      } catch (err: any) {
+        return {
+          status: "failed on cctp_attestation",
+          reason: err?.message ?? "Circle attestation API error",
+          txHash,
+          withdrawTxHash,
+          approveTxHash,
+          burnTxHash,
+        };
+      }
 
       // Mint USDC on destination chain
       const destWalletClient = createWalletClient({
@@ -252,16 +386,34 @@ const app = new Elysia()
         transport: http(),
       });
 
-      const mintTxHash = await destWalletClient.sendTransaction({
-        to: DEST_MSG_TRANSMITTER,
-        data: encodeFunctionData({
-          abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [] }],
-          functionName: "receiveMessage",
-          args: [attestation.message as `0x${string}`, attestation.attestation as `0x${string}`],
-        }),
-      });
+      let mintTxHash: string;
+      try {
+        mintTxHash = await destWalletClient.sendTransaction({
+          to: DEST_MSG_TRANSMITTER,
+          data: encodeFunctionData({
+            abi: [{ type: "function", name: "receiveMessage", stateMutability: "nonpayable", inputs: [{ name: "message", type: "bytes" }, { name: "attestation", type: "bytes" }], outputs: [] }],
+            functionName: "receiveMessage",
+            args: [attestation.message as `0x${string}`, attestation.attestation as `0x${string}`],
+          }),
+        });
+      } catch (err: any) {
+        return {
+          status: "failed on cctp_receiveMessage",
+          reason: err?.cause?.data?.errorName ?? err?.shortMessage ?? err?.message ?? "unknown error",
+          txHash,
+          withdrawTxHash,
+          approveTxHash,
+          burnTxHash,
+        };
+      }
 
       return { status: "done", txHash, withdrawTxHash, approveTxHash, burnTxHash, mintTxHash };
+     } catch (err: any) {
+       return {
+         status: "unexpected_error",
+         reason: err?.shortMessage ?? err?.message ?? String(err),
+       };
+     }
     },
     {
       body: t.Object({
@@ -278,7 +430,7 @@ const app = new Elysia()
       }),
     }
   )
-  .listen(process.env.PORT ?? 3000);
+  .listen(process.env.PORT ?? 3001);
 
 console.log(
   `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
